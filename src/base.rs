@@ -53,7 +53,26 @@ impl Base {
                     view.carrying = carrying;
                 }
             }
-            _ => {}
+            Message::ResourcePickedUp { pos, kind } => self.handle_pickup(pos, kind),
+            Message::ResourceDelivered { kind } => {
+                let mut w = self.world.write().unwrap();
+                match kind {
+                    ResourceKind::Energy => w.total_energy += 1,
+                    ResourceKind::Crystal => w.total_crystals += 1,
+                }
+                w.deliveries += 1;
+            }
+            Message::Claim { previous, new } => {
+                let mut w = self.world.write().unwrap();
+                if let Some(p) = previous {
+                    if let Some(c) = w.claims.get_mut(&p) {
+                        *c = c.saturating_sub(1);
+                    }
+                }
+                if let Some(p) = new {
+                    *w.claims.entry(p).or_insert(0) += 1;
+                }
+            }
         }
     }
 
@@ -92,6 +111,28 @@ impl Base {
             resources: new_resources,
             obstacles: new_obstacles,
         });
+    }
+
+    fn handle_pickup(&mut self, pos: Position, _kind: ResourceKind) {
+        let mut depleted = false;
+        {
+            let mut w = self.world.write().unwrap();
+            if let Some(res) = w.map.resources.get_mut(&pos) {
+                res.quantity = res.quantity.saturating_sub(1);
+                if res.quantity == 0 {
+                    depleted = true;
+                }
+            }
+            if depleted {
+                w.map.resources.remove(&pos);
+                w.claims.remove(&pos);
+                w.push_log(format!("Deposit at ({}, {}) depleted", pos.x, pos.y));
+            }
+        }
+        if depleted {
+            self.known_resources.remove(&pos);
+            self.broadcast(Update::ResourceDepleted { pos });
+        }
     }
 }
 
