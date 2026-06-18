@@ -41,5 +41,63 @@ impl Base {
         }
     }
 
-    fn handle(&mut self, _msg: Message) {}
+    fn handle(&mut self, msg: Message) {
+        match msg {
+            Message::Discovery { resources, obstacles } => {
+                self.handle_discovery(resources, obstacles)
+            }
+            Message::PositionUpdate { id, pos, carrying } => {
+                let mut w = self.world.write().unwrap();
+                if let Some(view) = w.robots.get_mut(id) {
+                    view.pos = pos;
+                    view.carrying = carrying;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_discovery(
+        &mut self,
+        resources: Vec<(Position, ResourceKind)>,
+        obstacles: Vec<Position>,
+    ) {
+        let mut new_resources = Vec::new();
+        let mut new_obstacles = Vec::new();
+
+        for (p, kind) in resources {
+            if self.known_resources.insert(p, kind).is_none() {
+                new_resources.push((p, kind));
+            }
+        }
+        for p in obstacles {
+            if self.known_obstacles.insert(p) {
+                new_obstacles.push(p);
+            }
+        }
+
+        if new_resources.is_empty() && new_obstacles.is_empty() {
+            return;
+        }
+
+        {
+            let mut w = self.world.write().unwrap();
+            w.discovered_resources = self.known_resources.len();
+            for (p, kind) in &new_resources {
+                w.push_log(format!("Discovered {} at ({}, {})", kind_label(*kind), p.x, p.y));
+            }
+        }
+
+        self.broadcast(Update::Knowledge {
+            resources: new_resources,
+            obstacles: new_obstacles,
+        });
+    }
+}
+
+fn kind_label(kind: ResourceKind) -> &'static str {
+    match kind {
+        ResourceKind::Energy => "energy",
+        ResourceKind::Crystal => "crystal",
+    }
 }
