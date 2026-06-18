@@ -1,0 +1,15 @@
+[package]
+name = "resource_collection_sim"
+version = "0.1.0"
+edition = "2021"
+description = "Terminal-based concurrent resource collection simulation with autonomous robots"
+
+[dependencies]
+ratatui = "0.28"
+crossterm = "0.28"
+noise = "0.9"
+rand = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
