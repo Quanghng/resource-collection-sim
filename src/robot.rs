@@ -279,6 +279,7 @@ pub fn run_collector(
     let mut target: Option<Position> = None;
     let mut carrying: Option<ResourceKind> = None;
     let mut unreachable: HashSet<Position> = HashSet::new();
+    let mut stuck_ticks: u32 = 0;
 
     while running.load(Ordering::Relaxed) {
         drain_updates(&updates, &mut knowledge);
@@ -340,9 +341,17 @@ pub fn run_collector(
                         outgoing.push(Message::ResourcePickedUp { pos: t, kind });
                         carrying = Some(kind);
                         state = CollectorState::Returning;
+                    } else if stuck_ticks >= 3 {
+                        // Deadlocked against another robot for too long: sidestep.
+                        pos = random_step(pos, &w, &occupied, &mut rng);
+                        stuck_ticks = 0;
                     } else {
                         match step_toward(pos, t, &w, &occupied) {
-                            Some(next) => pos = next,
+                            Some(next) if next == pos => stuck_ticks += 1,
+                            Some(next) => {
+                                pos = next;
+                                stuck_ticks = 0;
+                            }
                             None => {
                                 // Unreachable for now: blacklist and re-plan.
                                 unreachable.insert(t);
@@ -352,6 +361,7 @@ pub fn run_collector(
                                 });
                                 target = None;
                                 state = CollectorState::Searching;
+                                stuck_ticks = 0;
                             }
                         }
                     }
@@ -368,9 +378,17 @@ pub fn run_collector(
                         });
                         target = None;
                         state = CollectorState::Searching;
+                        stuck_ticks = 0;
+                    } else if stuck_ticks >= 3 {
+                        pos = random_step(pos, &w, &occupied, &mut rng);
+                        stuck_ticks = 0;
                     } else {
                         match step_toward(pos, base, &w, &occupied) {
-                            Some(next) => pos = next,
+                            Some(next) if next == pos => stuck_ticks += 1,
+                            Some(next) => {
+                                pos = next;
+                                stuck_ticks = 0;
+                            }
                             None => pos = random_step(pos, &w, &occupied, &mut rng),
                         }
                     }
